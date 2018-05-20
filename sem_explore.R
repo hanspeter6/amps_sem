@@ -212,6 +212,9 @@ soccer ~ age  + edu + hh_inc + lsm + male + black
 fit2 <- lavaan::sem(fullModel, data = set10_min_dummies, fit.measures = TRUE)
 summary(fit2, standardized = TRUE)
 
+# worry about distributions (especially binary, so se not accurate:)
+fit2_boot <- bootstrapLavaan(object = fit2)
+
 # try another year and compare parameter values
 
 
