@@ -252,12 +252,13 @@ freeTV ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
 soccer ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
 '
 
+
 # fit sem:
 fit_sem_all <- lavaan::sem(fullModel_all, data = set_min_prepped, fit.measures = TRUE)
 summary(fit_sem_all, standardized = TRUE) 
 
 # not too sure this is best.... 'year' kind of gets lost in the other regression coeff...?? Difficult to see change over time
-# --- maybe more dummies?.... and also consider bootstrapping options... for defensible std errs...,
+#  maybe more dummies?.... and also consider bootstrapping options... for defensible std errs...,
 #  will take lots of processing time given large all-set and checking one year seemed to give very similar estimates. Maybe ML OK for large sample...
 
 # Option 2: pseudo panels + longitudinal SEM R package: "ctsem":
@@ -340,5 +341,7 @@ mod_ctsem <- ctModel(n.manifest = 28,
 
 fit_ctsem <- ctFit(dat = set_fin_fin, mod_ctsem, dataform = "long")
 
-fit_ctsem
+# # worry about distributions (especially binary, so se not accurate:)
+# fit2_boot <- bootstrapLavaan(object = fit2)
+
 
