@@ -80,9 +80,11 @@ prep_sets_sem <- function(set) {
         set$hh_inc <- as.numeric(set$hh_inc)
         set$lsm <- as.numeric(set$lsm)
         
-        # 'sex' and 'race' to dummies
+        # 'sex', 'race', 'year' to dummies
         require(dummies)
-        set2 <- dummy.data.frame(data = set, names = c("sex", "race"))
+        set2 <- dummy.data.frame(data = set, names = c("sex", "race", "year"))
+        
+        # change names
         names(set2)[which(names(set2) == 'sex1')] <- "male"
         names(set2)[which(names(set2) == 'sex2')]  <- "female"
         names(set2)[which(names(set2) == 'race1')]  <- "black"
@@ -260,13 +262,13 @@ news ~~ popPrint
 popPrint ~~ soccer
 
 # regressions
-popPrint ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-african ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-afrikaans ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-social ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-news ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-freeTV ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
-soccer ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+popPrint ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+african ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+afrikaans ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+social ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+news ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+freeTV ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
+soccer ~ year2008 + year2010 + year2012 + year2014 + age + edu + hh_inc + lsm + male + white + coloured + indian + year2008:age + year2008:edu + year2008:hh_inc + year2008:lsm + year2008:male + year2008:white + year2008:coloured + year2008:indian + year2010:age + year2010:edu + year2010:hh_inc + year2010:lsm + year2010:male + year2010:white + year2010:coloured + year2010:indian + year2012:age + year2012:edu + year2012:hh_inc + year2012:lsm + year2012:male + year2012:white + year2012:coloured + year2012:indian + year2014:age + year2014:edu + year2014:hh_inc + year2014:lsm + year2014:male + year2014:white + year2014:coloured + year2014:indian
 '
 
 
