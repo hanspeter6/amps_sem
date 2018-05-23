@@ -202,8 +202,21 @@ set_min_prepped <- prep_sets_sem(set_min)
 # changing "year" to start from 0
 set_min_prepped$year <- set_min_prepped$year - 2002
 
+# # adding interaction effects as variables: CAN DO THIS WITH OPERATOR ':'
+# set_min_prepped <- set_min_prepped %>%
+#         mutate(year_age = year * age,
+#                year_male = year * male,
+#                year_edu = year * edu,
+#                year_hh_inc = year * hh_inc,
+#                year_white = year * white,
+#                year_coloured = year * coloured,
+#                year_indian = year * indian,
+#                year_lsm = year * lsm)
+
 # including "year" in structural part:
-fullModel_all <- '# latent variable definitions:
+fullModel_all <- '
+
+# latent variable definitions:
 popPrint =~ Business.Day + Mail.n.Guardian + The.Sunday.Independent + Sunday.Times + You + Car + Cosmopolitan + Getaway + Topcar
 afrikaans =~ Rapport + Huisgenoot + Sarie
 soccer =~ Soccer.Laduma + Kickoff
@@ -211,7 +224,9 @@ african =~ Drum + Bona + Metro.FM
 social =~ X5FM + DSTV + int_social + int_radio + int_search
 freeTV =~ e.tv + SABC.1 + SABC.2 + SABC.3
 news =~ int_print + int_news
+
 # variances and covariances of factors
+
 # variances
 popPrint ~~ popPrint
 african ~~ african
@@ -220,6 +235,7 @@ afrikaans ~~ afrikaans
 soccer ~~ soccer
 news ~~ news
 freeTV ~~ freeTV
+
 #covariances
 freeTV ~~ social
 freeTV ~~ african
@@ -242,21 +258,286 @@ afrikaans ~~ soccer
 news ~~ soccer
 news ~~ popPrint
 popPrint ~~ soccer
+
 # regressions
-popPrint ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-african ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-afrikaans ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-social ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-news ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-freeTV ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
-soccer ~ year + age + edu + hh_inc + lsm + male + black + coloured + white
+popPrint ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+african ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+afrikaans ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+social ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+news ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+freeTV ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
+soccer ~ year + age + edu + hh_inc + lsm + male + white + coloured + indian + year:age + year:edu + year:hh_inc + year:lsm + year:male + year:white + year:coloured + year:indian
 '
 
 
 # fit sem:
 fit_sem_all <- lavaan::sem(fullModel_all, data = set_min_prepped, fit.measures = TRUE)
-summary(fit_sem_all, standardized = TRUE) 
+summary(fit_sem_all, standardized = TRUE, fit.measures = TRUE) 
 
+##  try to do plots comparing fitted with actual by category and by year:
+
+# define the model matrix (NB order of columns: freeTV, social, news, afrikaans, popPrint, soccer, african)
+mod_mat <- matrix(c(0,0,0,0,1,0,0, 
+                    0,0,0,0,1,0,0,
+                    0,0,0,1,0,0,0,
+                    0,0,0,0,1,0,0,
+                    0,0,0,0,1,0,0,
+                    0,0,0,0,0,1,0,
+                    0,0,0,0,0,0,1,
+                    0,0,0,1,0,0,0,
+                    0,0,0,0,1,0,0,
+                    0,0,0,0,0,1,0,
+                    0,0,0,0,0,0,1,
+                    0,0,0,0,1,0,0,
+                    0,0,0,0,1,0,0,
+                    0,0,0,0,1,0,0,
+                    0,0,0,1,0,0,0,
+                    0,0,0,0,1,0,0,
+                    0,1,0,0,0,0,0,
+                    0,0,0,0,0,0,1,
+                    1,0,0,0,0,0,0,
+                    1,0,0,0,0,0,0,
+                    1,0,0,0,0,0,0,
+                    1,0,0,0,0,0,0,
+                    0,1,0,0,0,0,0,
+                    0,0,1,0,0,0,0,
+                    0,1,0,0,0,0,0,
+                    0,0,1,0,0,0,0,
+                    0,1,0,0,0,0,0,
+                    0,1,0,0,0,0,0), nrow = 28, ncol = 7, byrow = TRUE)
+
+# construct dataframe of standardised observed by the model:
+obs <-as.matrix(set_min[,20:ncol(set_min)]) %*% mod_mat
+colnames(obs) <- c("freeTV", "social", "news", "afrikaans", "popPrint","soccer", "african")
+comb <- cbind.data.frame(set_min[1:19],scale(obs))
+
+# function to create frames
+frames_factors_all <- function(set, category) {
+        require(dplyr)
+        
+        # set$cluster <- factor(set$cluster, labels = c("cluster1", "cluster2", "cluster3", "cluster4"))
+        set$age <- factor(set$age, labels = c("15-24","25-44", "45-54","55+"), ordered = TRUE)
+        set$race <- factor(set$race,labels = c("black", "coloured", "indian", "white"), ordered = TRUE)
+        set$edu <- factor(set$edu, labels = c("<matric", "matric",">matric" ) ,ordered = TRUE)
+        set$lsm <- factor(set$lsm, labels = c("LSM1-2", "LSM3-4", "LSM5-6", "LSM7-8", "LSM9-10"), ordered = TRUE) #"LSM1-2", 
+        set$sex <- factor(set$sex, labels = c("male", "female"), ordered = TRUE)
+        set$hh_inc <- factor(set$hh_inc, labels = c("<R2500","R2500-R6999","R7000-R11999",">=R12000"), ordered = TRUE) # NB 2012 levels
+        
+        
+        set %>%
+                group_by_(year = "year", category = category) %>%
+                summarise(popPrint = mean(popPrint),
+                          afrikaans = mean(afrikaans),
+                          soccer = mean(soccer),
+                          african = mean(african),
+                          social = mean(social),
+                          freeTV = mean(freeTV),
+                          news = mean(news)
+                          # up_f1 = mean(ML1) + (2 * sd(ML1)/sqrt(length(ML1))),
+                          # low_f1 = mean(ML1) - (2 * sd(ML1)/sqrt(length(ML1))),
+                          # up_f2 = mean(ML2) + (2 * sd(ML2)/sqrt(length(ML2))),
+                          # low_f2 = mean(ML2) - (2 * sd(ML2)/sqrt(length(ML2))),
+                          # up_f3 = mean(ML3) + (2 * sd(ML3)/sqrt(length(ML3))),
+                          # low_f3 = mean(ML3) - (2 * sd(ML3)/sqrt(length(ML3))),
+                          # up_f4 = mean(ML4) + (2 * sd(ML4)/sqrt(length(ML4))),
+                          # low_f4 = mean(ML4) - (2 * sd(ML4)/sqrt(length(ML4))),
+                          # up_f5 = mean(ML5) + (2 * sd(ML5)/sqrt(length(ML5))),
+                          # low_f5 = mean(ML5) - (2 * sd(ML5)/sqrt(length(ML5))),
+                          # up_f6 = mean(ML6) + (2 * sd(ML6)/sqrt(length(ML6))),
+                          # low_f6 = mean(ML6) - (2 * sd(ML6)/sqrt(length(ML6))),
+                          # up_f7 = mean(ML7) + (2 * sd(ML7)/sqrt(length(ML7))),
+                          # low_f7 = mean(ML7) - (2 * sd(ML7)/sqrt(length(ML7)))
+                          )
+        
+}
+
+# function to bind the frames by year
+frame_bind_factor_all <- function(set) {
+        rbind.data.frame(#frames_factors(set,"cluster"),
+                frames_factors_all(set,"sex"),
+                frames_factors_all(set,"age"),
+                frames_factors_all(set,"edu"),
+                frames_factors_all(set,"race"),
+                frames_factors_all(set, "hh_inc"),
+                frames_factors_all(set,"lsm")) %>% 
+                dplyr::select(year,category, everything())
+        
+}
+factor_obs_all <- data.frame(frame_bind_factor_all(comb))
+
+all_plots_factors <- function(data, title = "All Scores Observed") {
+        ggplot(data = data, title = title) +
+                geom_line(aes(year, social, group = category, colour = "Social")) +
+                geom_line(aes(year, freeTV, group = category, colour = "Free TV")) +
+                geom_line(aes(year, afrikaans, group = category, colour = "Afrikaans")) +
+                geom_line(aes(year, soccer, group = category, colour = "Soccer")) +
+                geom_line(aes(year, news, group = category, colour = "News")) +
+                geom_line(aes(year, african, group = category, colour = "African")) +
+                geom_line(aes(year, popPrint, group = category, colour = "PopPrint")) +
+                scale_colour_discrete(name="Factors") +
+                facet_grid(. ~ category) +
+                theme(axis.text.x = element_text(size = 6)) +
+                labs(y = "aggregate scores observed", title = title)
+        
+}
+
+all_plots_factors(factor_obs_all)
+
+vector_row1 <- c("male", "female","15-24","25-44", "45-54","55+","black", "coloured", "indian", "white")
+vector_row2 <- c("<matric", "matric",">matric", "<R2500","R2500-R6999","R7000-R11999",">=R12000", "LSM1-2", "LSM3-4", "LSM5-6", "LSM7-8", "LSM9-10")
+
+# now focussing on the predicted (fitted values):
+# predicted values from sem model
+pred_sem_all <- predict(fit_sem_all)
+
+# first create similar from to observed values:
+first <- cbind.data.frame(set_min[1:19],scale(pred_sem_all))
+
+second <- frame_bind_factor_all(first)
+
+colnames(second) <- c("year",
+                      "category",
+                      "popPrint_pred",
+                      "afrikaans_pred",
+                      "soccer_pred",
+                      "african_pred",
+                      "social_pred",
+                      "freeTV_pred",
+                      "news_pred")
+
+test_join <- left_join(factor_obs_all, second, by = c("year", "category"))
+
+# function for plotting fitted models
+plot_fitted_factors <- function(data, factor) { # factor:one of: popPrint afrikaans soccer  african  social   freeTV    news
+        
+        if(factor == "social") {
+                a <- "social"
+                b <- "social_pred"
+                # c <- "up_f1"
+                # d <- "low_f1"
+                e <- "Social"
+                f <- "Social with Fitted Values"
+        }
+        if(factor == "freeTV") {
+                a <- "freeTV"
+                b <- "freeTV_pred"
+                # c <- "up_f2"
+                # d <- "low_f2"
+                e <- "Free TV"
+                f <- "Free TV with Fitted Values"
+        }
+        if(factor == "afrikaans") {
+                a <- "afrikaans"
+                b <- "afrikaans_pred"
+                # c <- "up_f3"
+                # d <- "low_f3"
+                e <- "Afrikaans"
+                f <- "Afrikaans with Fitted Values"
+        }
+        if(factor == "soccer") {
+                a <- "soccer"
+                b <- "soccer_pred"
+                # c <- "up_f4"
+                # d <- "low_f4"
+                e <- "Soccer"
+                f <- "Soccer with Fitted Values"
+        }
+        if(factor == "news") {
+                a <- "news"
+                b <- "news_pred"
+                # c <- "up_f5"
+                # d <- "low_f5"
+                e <- "News"
+                f <- "News with Fitted Values"
+        }
+        if(factor == "african") {
+                a <- "african"
+                b <- "african_pred"
+                # c <- "up_f6"
+                # d <- "low_f6"
+                e <- "African"
+                f <- "African with Fitted Values"
+        }
+        if(factor == "popPrint") {
+                a <- "popPrint"
+                b <- "popPrint_pred"
+                # c <- "up_f7"
+                # d <- "low_f7"
+                e <- "popPrint"
+                f <- "PopPrint with Fitted Values"
+        }
+        
+        #plot
+        ggplot(data, aes_string("year", a, group = "category")) +
+                geom_point(color = "blue", size = 1, fill = "white", alpha = 0.5) +
+                geom_line(size = 0.2) +
+                geom_line(aes_string("year", b, group = "category"), colour = "red", size = 0.3, linetype = 2 ) +
+                facet_grid(.~ category) + theme(axis.text.x = element_text(size = 6)) +
+                # geom_errorbar(aes_string(ymax = c, ymin = d), size = 0.3, width = 0.4, alpha = 0.5) +
+                labs(y = e, title = f)
+        
+}
+library(gridExtra)
+## social
+pf_social_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                       factor = "social")
+pf_social_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                         factor = "social")
+jpeg("social_fitted.jpeg", quality = 100)
+grid.arrange(pf_social_up, pf_social_down, nrow = 2)
+dev.off()
+
+## freeTV
+pf_freeTV_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                             factor = "freeTV")
+pf_freeTV_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                               factor = "freeTV")
+jpeg("freeTV_fitted.jpeg", quality = 100)
+grid.arrange(pf_freeTV_up, pf_freeTV_down, nrow = 2)
+dev.off()
+
+## afrikaans
+pf_afrikaans_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                                factor = "afrikaans")
+pf_afrikaans_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                                  factor = "afrikaans")
+jpeg("afrikaans_fitted.jpeg", quality = 100)
+grid.arrange(pf_afrikaans_up, pf_afrikaans_down, nrow = 2)
+dev.off()
+
+## soccer
+pf_soccer_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                                factor = "soccer")
+pf_soccer_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                                  factor = "soccer")
+jpeg("soccer_fitted.jpeg", quality = 100)
+grid.arrange(pf_soccer_up, pf_soccer_down, nrow = 2)
+dev.off()
+
+## african
+pf_african_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                                factor = "african")
+pf_african_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                                  factor = "african")
+jpeg("african_fitted.jpeg", quality = 100)
+grid.arrange(pf_african_up, pf_african_down, nrow = 2)
+dev.off()
+
+## popPrint
+pf_popPrint_up <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row1),],
+                                                factor = "popPrint")
+pf_popPrint_down <- plot_fitted_factors(data = test_join[which(test_join$category %in% vector_row2),],
+                                                  factor = "popPrint")
+jpeg("popPrint_fitted.jpeg", quality = 100)
+grid.arrange(pf_popPrint_up, pf_popPrint_down, nrow = 2)
+dev.off()
+
+#
+b <- fitted(fit_sem_all)
+c <- BIC(fit_sem_all)
+show(fit_sem_all)
+mi <- modificationIndices(fit_sem_all)
+subset(mi, mi > 10)
 # not too sure this is best.... 'year' kind of gets lost in the other regression coeff...?? Difficult to see change over time
 #  maybe more dummies?.... and also consider bootstrapping options... for defensible std errs...,
 #  will take lots of processing time given large all-set and checking one year seemed to give very similar estimates. Maybe ML OK for large sample...
