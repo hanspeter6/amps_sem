@@ -51,8 +51,6 @@ set_min <- rbind.data.frame(add_year(set02_min[,!names(set02_min) %in% c("lifest
                             add_year(set10_min[,!names(set10_min) %in% c("lifestages", "lifestyle", "attitudes")], 2010),
                             add_year(set12_min[,!names(set12_min) %in% c("lifestages", "lifestyle", "attitudes")], 2012),
                             add_year(set14_min[,!names(set14_min) %in% c("lifestages", "lifestyle", "attitudes")], 2014))
-# save it
-saveRDS(set_min, "set_min.rds")
 
 # indicate start and end of media vehicles:
 strt <- which(names(set_min) == "Business.Day")
@@ -60,6 +58,10 @@ lst <- ncol(set_min)
 
 # scaling the media vehicle variables to mean = 0 and sd = 1 for pooled dataset
 set_min <- cbind.data.frame(set_min[,1:strt-1], scale(set_min[,strt:lst]))
+
+# save it
+saveRDS(set_min, "set_min.rds")
+set_min <- readRDS("set_min.rds")
 
 # pca method (package "nFactors") to estimate optimum number of factors to extract:
 ## Determine Number of Factors to Extract
@@ -137,6 +139,30 @@ set_prepped_yrNum$year <- set_prepped_yrNum$year - 2002
 fit_sem_yrCat <- lavaan::sem(model_year_categorical, data = set_prepped_yrCat, fit.measures = TRUE, meanstructure = TRUE)
 fit_sem_yrNum <- lavaan::sem(model_year_numeric, data = set_prepped_yrNum, fit.measures = TRUE, meanstructure = TRUE)
 
+
+
+
+# testing boot (great, but very slow... here just 10 bootstrapped samples)
+fit_sem_bootTest <- lavaan::sem(model_test, data = set_prepped_yrNum, fitMeasures = TRUE)#, se = "standard", test = "bootstrap", bootstrap = 5)
+
+summary(fit_sem_bootTest)
+
+boot_cat <- bootstrapLavaan(fit_sem_bootTest, R = 5)
+boot_cat # gives free parameter estimates for each of 10 bootstraps
+summary(boot_cat) # gives summary stats for each free parameter. So can get for example se of the mean:
+str(boot_cat) # named matrix
+boot_cat[1:10,1:3] # gets the 10 bootstrapped estimates for first three parameters
+str(summary(boot_cat)) # table rows = 6 stats, cols = parameters
+summary(boot_cat)[,1]
+
+# function to calculate std errors of the mean:
+sems <- function(x) mean(x) + c(-1,1)*2*sqrt(var(x)/length(x))
+# calculating confidence intervals (95%) for the bootstrapped estimates of the free parameters
+boot_cat_sems <- apply(boot_cat, 2, sems)
+
+
+
+
 # save these to lavaan model objects for 
 saveRDS(fit_sem_yrCat, "fit_sem_yrCat.rds")
 saveRDS(fit_sem_yrNum, "fit_sem_yrNum.rds")
@@ -144,6 +170,11 @@ fit_sem_yrCat <- readRDS("fit_sem_yrCat.rds")
 fit_sem_yrNum <- readRDS("fit_sem_yrNum.rds")
 
 # considering the two models:
+
+# # try bootstrapping:
+# boot_cat <- bootstrapLavaan(fit_sem_yrCat, R = 10, type = "bollen.stine", 
+#                             FUN = "coef")
+
 
 # ??lavaan::summary # NB: worth checking the help pages on this!!
 
@@ -162,15 +193,17 @@ residuals_yrCat <- residuals(fit_sem_yrCat)
 residuals_yrCat$cov # not sure what to do about this?
 
 # Want to consider prediction and plots against aggregated values by demographic category
-#  in a way that allows for comparisons with pseudo panel approach:
+#  including error bars for confidence intervals of predictions
 
 # will use predictions from year-as-category (they appear better for predictions, although would want to check coeficients of year-as-number later also)
-# may want to get back to lavPredict(object, type = "yhat")...??
-# creating a "yhat" version for use in prediction:
 
+# creating a "yhat" version for use in prediction and also determine confidence intervals for predicted values
 yhat <- lavPredict(fit_sem_yrCat, type = "yhat")
+X <- yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")]
+
 # extracting the coefficients
 coeff_fit <- coef(fit_sem_yrCat)
+
 # extracting the latent factor scores
 scores_fit <- data.frame(lavPredict(fit_sem_yrCat, method = "Bartlett")) # not standardised scores!. So, will need to do same for  the predictions also
 
@@ -178,114 +211,174 @@ scores_fit <- data.frame(lavPredict(fit_sem_yrCat, method = "Bartlett")) # not s
 # use only complete.cases
 set_min_complete <- set_min[complete.cases(set_min),]
 
-# vectors for popPrint
-pred_popPrint <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-        coeff_fit[which(names(coeff_fit) == "popPrint~year2008"):which(names(coeff_fit) == "popPrint~year2014:indian")]
+# sample size
+n <- dim(set_min_complete)[1]
+
+# tvalue
+t.val <- qt(0.075, n-2)
+
+
+# 1st inverse of (X'X)^-1
+inv_xtx <- solve(t(X)%*%X)
+
+# run for different rows of standard errors
+vec_se <- vector()
+for(i in 1:n) {
+        vec_se[i] <- t(X[i,])%*%inv_xtx%*%X[i,]
+        
+}
+
+##### freeTV
+# observed values
+scores_freeTV <- scores_fit[,'freeTV'] 
+# predicted values from regression, using model coefficients
+pred_freeTV <-  X %*% coeff_fit[which(names(coeff_fit) == "freeTV~year2008"):which(names(coeff_fit) == "freeTV~year2014:indian")]
+# correlation for interest sake
+corr_freeTV <- cor(pred_freeTV, scores_freeTV)
+# SSE (Sum of Squared Errors of prediction)
+sse_freeTV <- sum((scores_freeTV - pred_freeTV)^2)
+# MSE  (Mean Squared Errors)
+mse_freeTV <- sse_freeTV/(n-2)
+# standard error of the mean
+se_freeTV <- sqrt(mse_freeTV * vec_se)
+
+# upper and lower confidence values
+upr_freeTV <- pred_freeTV + t.val * se_freeTV
+lwr_freeTV <- pred_freeTV - t.val * se_freeTV
+
+##### popPrint
+# observed values
 scores_popPrint <- scores_fit[,'popPrint'] 
-corr_popPrint <- cor(pred_popPrint, scores_popPrint) # for interest sake
-mse_popPrint <- mean((pred_popPrint - scores_popPrint)^2) # for interest sake
+# predicted values from regression, using model coefficients
+pred_popPrint <-  X %*% coeff_fit[which(names(coeff_fit) == "popPrint~year2008"):which(names(coeff_fit) == "popPrint~year2014:indian")]
+# correlation for interest sake
+corr_popPrint <- cor(pred_popPrint, scores_popPrint)
+# SSE (Sum of Squared Errors of prediction)
+sse_popPrint <- sum((scores_popPrint - pred_popPrint)^2)
+# MSE  (Mean Squared Errors)
+mse_popPrint <- sse_popPrint/(n-2)
+# standard error of the mean
+se_popPrint <- sqrt(mse_popPrint * vec_se)
 
-# vectors for news
-pred_news <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                                coeff_fit[which(names(coeff_fit) == "news~year2008"):which(names(coeff_fit) == "news~year2014:indian")]
+# upper and lower confidence values
+upr_popPrint <- pred_popPrint + t.val * se_popPrint
+lwr_popPrint <- pred_popPrint - t.val * se_popPrint
+
+##### news
+# observed values
 scores_news <- scores_fit[,'news'] 
-corr_news <- cor(pred_news, scores_news) # for interest sake
-mse_news <- mean((pred_news - scores_news)^2) # for interest sake
+# predicted values from regression, using model coefficients
+pred_news <-  X %*% coeff_fit[which(names(coeff_fit) == "news~year2008"):which(names(coeff_fit) == "news~year2014:indian")]
+# correlation for interest sake
+corr_news <- cor(pred_news, scores_news)
+# SSE (Sum of Squared Errors of prediction)
+sse_news <- sum((scores_news - pred_news)^2)
+# MSE  (Mean Squared Errors)
+mse_news <- sse_news/(n-2)
+# standard error of the mean
+se_news <- sqrt(mse_news * vec_se)
 
-# vectors for social
-pred_social <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                                coeff_fit[which(names(coeff_fit) == "social~year2008"):which(names(coeff_fit) == "social~year2014:indian")]
-scores_social <- scores_fit[,'social'] 
-corr_social <- cor(pred_social, scores_social) # for interest sake
-mse_social <- mean((pred_social - scores_social)^2) # for interest sake
+# upper and lower confidence values
+upr_news <- pred_news + t.val * se_news
+lwr_news <- pred_news - t.val * se_news
 
-# vectors for afrikaans
-pred_afrikaans <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                                coeff_fit[which(names(coeff_fit) == "afrikaans~year2008"):which(names(coeff_fit) == "afrikaans~year2014:indian")]
+##### afrikaans
+# observed values
 scores_afrikaans <- scores_fit[,'afrikaans'] 
-corr_afrikaans <- cor(pred_afrikaans, scores_afrikaans) # for interest sake
-mse_afrikaans <- mean((pred_afrikaans - scores_afrikaans)^2) # for interest sake
+# predicted values from regression, using model coefficients
+pred_afrikaans <-  X %*% coeff_fit[which(names(coeff_fit) == "afrikaans~year2008"):which(names(coeff_fit) == "afrikaans~year2014:indian")]
+# correlation for interest sake
+corr_afrikaans <- cor(pred_afrikaans, scores_afrikaans)
+# SSE (Sum of Squared Errors of prediction)
+sse_afrikaans <- sum((scores_afrikaans - pred_afrikaans)^2)
+# MSE  (Mean Squared Errors)
+mse_afrikaans <- sse_afrikaans/(n-2)
+# standard error of the mean
+se_afrikaans <- sqrt(mse_afrikaans * vec_se)
 
-# vectors for african
-pred_african <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                                coeff_fit[which(names(coeff_fit) == "african~year2008"):which(names(coeff_fit) == "african~year2014:indian")]
+# upper and lower confidence values
+upr_afrikaans <- pred_afrikaans + t.val * se_afrikaans
+lwr_afrikaans <- pred_afrikaans - t.val * se_afrikaans
+
+##### african
+# observed values
 scores_african <- scores_fit[,'african'] 
-corr_african <- cor(pred_african, scores_african) # for interest sake
-mse_african <- mean((pred_african - scores_african)^2) # for interest sake
+# predicted values from regression, using model coefficients
+pred_african <-  X %*% coeff_fit[which(names(coeff_fit) == "african~year2008"):which(names(coeff_fit) == "african~year2014:indian")]
+# correlation for interest sake
+corr_african <- cor(pred_african, scores_african)
+# SSE (Sum of Squared Errors of prediction)
+sse_african <- sum((scores_african - pred_african)^2)
+# MSE  (Mean Squared Errors)
+mse_african <- sse_african/(n-2)
+# standard error of the mean
+se_african <- sqrt(mse_african * vec_se)
 
-# vectors for soccer
-pred_soccer <-  yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                               coeff_fit[which(names(coeff_fit) == "soccer~year2008"):which(names(coeff_fit) == "soccer~year2014:indian")]
-scores_soccer <- scores_fit[,'soccer']
-corr_soccer <- cor(pred_soccer, scores_soccer) # for interest sake
-mse_soccer <- mean((pred_soccer - scores_soccer)^2) # for interest sake
+# upper and lower confidence values
+upr_african <- pred_african + t.val * se_african
+lwr_african <- pred_african - t.val * se_african
 
-# vectors for freeTV
-pred_freeTV <- yhat[,which(names(data.frame(yhat)) == "year2008"):which(names(data.frame(yhat)) == "year2014.indian")] %*%
-                              coeff_fit[which(names(coeff_fit) == "freeTV~year2008"):which(names(coeff_fit) == "freeTV~year2014:indian")]
-scores_freeTV <- scores_fit[,'freeTV']
-corr_freeTV <- cor(pred_freeTV, scores_freeTV) # for interest sake
-mse_freeTV <- mean((pred_freeTV - scores_freeTV)^2) # for interest sake
+##### soccer
+# observed values
+scores_soccer <- scores_fit[,'soccer'] 
+# predicted values from regression, using model coefficients
+pred_soccer <-  X %*% coeff_fit[which(names(coeff_fit) == "soccer~year2008"):which(names(coeff_fit) == "soccer~year2014:indian")]
+# correlation for interest sake
+corr_soccer <- cor(pred_soccer, scores_soccer)
+# SSE (Sum of Squared Errors of prediction)
+sse_soccer <- sum((scores_soccer - pred_soccer)^2)
+# MSE  (Mean Squared Errors)
+mse_soccer <- sse_soccer/(n-2)
+# standard error of the mean
+se_soccer <- sqrt(mse_soccer * vec_se)
+
+# upper and lower confidence values
+upr_soccer <- pred_soccer + t.val * se_soccer
+lwr_soccer <- pred_soccer - t.val * se_soccer
+
+##### social
+# observed values
+scores_social <- scores_fit[,'social'] 
+# predicted values from regression, using model coefficients
+pred_social <-  X %*% coeff_fit[which(names(coeff_fit) == "social~year2008"):which(names(coeff_fit) == "social~year2014:indian")]
+# correlation for interest sake
+corr_social <- cor(pred_social, scores_social)
+# SSE (Sum of Squared Errors of prediction)
+sse_social <- sum((scores_social - pred_social)^2)
+# MSE  (Mean Squared Errors)
+mse_social <- sse_social/(n-2)
+# standard error of the mean
+se_social <- sqrt(mse_social * vec_se)
+
+# upper and lower confidence values
+upr_social <- pred_social + t.val * se_social
+lwr_social <- pred_social - t.val * se_social
+
 
 # create single dataset:
 set_fin <- set_min_complete %>%
         mutate(pred_popPrint = as.vector(pred_popPrint)) %>%
-        mutate(scores_popPrint = as.vector(scores_popPrint)) %>%
         mutate(pred_social = as.vector(pred_social)) %>%
-        mutate(scores_social = as.vector(scores_social)) %>%
         mutate(pred_afrikaans = as.vector(pred_afrikaans)) %>%
-        mutate(scores_afrikaans = as.vector(scores_afrikaans)) %>%
         mutate(pred_african = as.vector(pred_african)) %>%
-        mutate(scores_african = as.vector(scores_african)) %>%
         mutate(pred_news = as.vector(pred_news)) %>%
-        mutate(scores_news = as.vector(scores_news)) %>%
         mutate(pred_freeTV = as.vector(pred_freeTV)) %>%
-        mutate(scores_freeTV = as.vector(scores_freeTV)) %>%
         mutate(pred_soccer = as.vector(pred_soccer)) %>%
-        mutate(scores_soccer = as.vector(scores_soccer))
+        mutate(lwr_popPrint = as.vector(lwr_popPrint)) %>%
+        mutate(upr_popPrint = as.vector(upr_popPrint)) %>%
+        mutate(lwr_social = as.vector(lwr_social)) %>%
+        mutate(upr_social = as.vector(upr_social)) %>%
+        mutate(lwr_afrikaans = as.vector(lwr_afrikaans)) %>%
+        mutate(upr_afrikaans = as.vector(upr_afrikaans)) %>%
+        mutate(lwr_african = as.vector(lwr_african)) %>%
+        mutate(upr_african = as.vector(upr_african)) %>%
+        mutate(lwr_news = as.vector(lwr_news)) %>%
+        mutate(upr_news = as.vector(upr_news)) %>%
+        mutate(lwr_freeTV = as.vector(lwr_freeTV)) %>%
+        mutate(upr_freeTV = as.vector(upr_freeTV)) %>%
+        mutate(lwr_soccer = as.vector(lwr_soccer)) %>%
+        mutate(upr_soccer = as.vector(upr_soccer))
 
-# # library(psych)
-# # lavaan.diagram(fit_sem_all, cut = 0.3, cex = 0.5, regression = TRUE)
-# 
-# 
-# fit_sem_parameters <- as.data.frame(parameterEstimates(fit_sem_all, rsquare = TRUE, standardized = TRUE))
-# fit_sem_parameters[,4:ncol(fit_sem_parameters)] <- round(fit_sem_parameters[,4:ncol(fit_sem_parameters)], 4)
-# ##  try to do plots comparing fitted with actual by category and by year:
-# 
-# # define the model matrix (NB order of columns: freeTV, social, news, afrikaans, popPrint, soccer, african)
-# mod_mat <- matrix(c(0,0,0,0,1,0,0, 
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,1,0,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,0,0,1,0,
-#                     0,0,0,0,0,0,1,
-#                     0,0,0,1,0,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,0,0,1,0,
-#                     0,0,0,0,0,0,1,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,0,0,1,0,0,0,
-#                     0,0,0,0,1,0,0,
-#                     0,1,0,0,0,0,0,
-#                     0,0,0,0,0,0,1,
-#                     1,0,0,0,0,0,0,
-#                     1,0,0,0,0,0,0,
-#                     1,0,0,0,0,0,0,
-#                     1,0,0,0,0,0,0,
-#                     0,1,0,0,0,0,0,
-#                     0,0,1,0,0,0,0,
-#                     0,1,0,0,0,0,0,
-#                     0,0,1,0,0,0,0,
-#                     0,1,0,0,0,0,0,
-#                     0,1,0,0,0,0,0), nrow = 28, ncol = 7, byrow = TRUE)
-# 
-# # construct dataframe of standardised observed by the model:
-# obs <-as.matrix(set_min[,22:ncol(set_min)]) %*% mod_mat
-# colnames(obs) <- c("freeTV", "social", "news", "afrikaans", "popPrint","soccer", "african")
-# comb <- cbind.data.frame(set_min[1:21],scale(obs))
 
 # function to create frames
 frames_factors_all <- function(set, category) {
@@ -303,21 +396,27 @@ frames_factors_all <- function(set, category) {
         set %>%
                 group_by_(year = "year", category = category) %>%
                 summarise(pred_popPrint = mean(pred_popPrint),
-                          scores_popPrint = mean(scores_popPrint),
                           pred_social = mean(pred_social),
-                          scores_social = mean(scores_social),
                           pred_soccer = mean(pred_soccer),
-                          scores_soccer = mean(scores_soccer),
                           pred_news = mean(pred_news),
-                          scores_news = mean(scores_news),
                           pred_freeTV = mean(pred_freeTV),
-                          scores_freeTV = mean(scores_freeTV),
                           pred_african = mean(pred_african),
-                          scores_african = mean(scores_african),
                           pred_afrikaans = mean(pred_afrikaans),
-                          scores_afrikaans = mean(scores_afrikaans))
-                          
-        
+                          lwr_popPrint = mean(lwr_popPrint),
+                          upr_popPrint = mean(upr_popPrint),
+                          lwr_social = mean(lwr_social),
+                          upr_social = mean(upr_social),
+                          lwr_soccer = mean(lwr_soccer),
+                          upr_soccer = mean(upr_soccer),
+                          lwr_news = mean(lwr_news),
+                          upr_news = mean(upr_news),
+                          lwr_freeTV = mean(lwr_freeTV),
+                          upr_freeTV = mean(upr_freeTV),
+                          lwr_african = mean(lwr_african),
+                          upr_african = mean(upr_african),
+                          lwr_afrikaans = mean(lwr_afrikaans),
+                          upr_afrikaans = mean(upr_afrikaans))
+                
 }
 
 # function to bind the frames by year
@@ -332,25 +431,8 @@ frame_bind_factor_all <- function(set) {
                 dplyr::select(year,category, everything())
         
 }
-all_preds_scores <- data.frame(frame_bind_factor_all(set_fin))
+all_preds_ci <- data.frame(frame_bind_factor_all(set_fin))
 
-# all_plots_factors <- function(data, title = "All Scores Observed") {
-#         ggplot(data = data, title = title) +
-#                 geom_line(aes(year, social, group = category, colour = "Social")) +
-#                 geom_line(aes(year, freeTV, group = category, colour = "Free TV")) +
-#                 geom_line(aes(year, afrikaans, group = category, colour = "Afrikaans")) +
-#                 geom_line(aes(year, soccer, group = category, colour = "Soccer")) +
-#                 geom_line(aes(year, news, group = category, colour = "News")) +
-#                 geom_line(aes(year, african, group = category, colour = "African")) +
-#                 geom_line(aes(year, popPrint, group = category, colour = "PopPrint")) +
-#                 scale_colour_discrete(name="Factors") +
-#                 facet_grid(. ~ category) +
-#                 theme(axis.text.x = element_text(size = 6)) +
-#                 labs(y = "aggregate scores observed", title = title)
-#         
-# }
-# 
-# all_plots_factors(factor_scores_all)
 
 vector_row1 <- c("male", "female","15-24","25-44", "45-54","55+","black", "coloured", "indian", "white")
 vector_row2 <- c("<matric", "matric",">matric", "<R2500","R2500-R6999","R7000-R11999",">=R12000", "LSM1-2", "LSM3-4", "LSM5-6", "LSM7-8", "LSM9-10")
@@ -361,252 +443,128 @@ vector_row2 <- c("<matric", "matric",">matric", "<R2500","R2500-R6999","R7000-R1
 plot_fitted_factors <- function(data, factor) { # factor:one of: popPrint afrikaans soccer  african  social   freeTV    news
         
         if(factor == "social") {
-                a <- "scores_social"
-                b <- "pred_social"
-                # c <- "up_f1"
-                # d <- "low_f1"
+                a <- "pred_social"
+                # b <- "pred_social"
+                c <- "upr_social"
+                d <- "lwr_social"
                 e <- "Social"
-                f <- "Social with Fitted Values"
+                f <- "Social: Fitted Values"
         }
         if(factor == "freeTV") {
-                a <- "scores_freeTV"
-                b <- "pred_freeTV"
-                # c <- "up_f2"
-                # d <- "low_f2"
+                a <- "pred_freeTV"
+                # b <- "pred_freeTV"
+                c <- "upr_freeTV"
+                d <- "lwr_freeTV"
                 e <- "Free TV"
-                f <- "Free TV with Fitted Values"
+                f <- "Free TV: Fitted Values"
         }
         if(factor == "afrikaans") {
-                a <- "scores_afrikaans"
-                b <- "pred_afrikaans"
-                # c <- "up_f3"
-                # d <- "low_f3"
+                a <- "pred_afrikaans"
+                # b <- "pred_afrikaans"
+                c <- "upr_afrikaans"
+                d <- "lwr_afrikaans"
                 e <- "Afrikaans"
-                f <- "Afrikaans with Fitted Values"
+                f <- "Afrikaans: Fitted Values"
         }
         if(factor == "soccer") {
-                a <- "scores_soccer"
-                b <- "pred_soccer"
-                # c <- "up_f4"
-                # d <- "low_f4"
+                a <- "pred_soccer"
+                # b <- "pred_soccer"
+                c <- "upr_soccer"
+                d <- "lwr_soccer"
                 e <- "Soccer"
-                f <- "Soccer with Fitted Values"
+                f <- "Soccer: Fitted Values"
         }
         if(factor == "news") {
-                a <- "scores_news"
-                b <- "pred_news"
-                # c <- "up_f5"
-                # d <- "low_f5"
+                a <- "pred_news"
+                # b <- "pred_news"
+                c <- "upr_news"
+                d <- "lwr_news"
                 e <- "News"
-                f <- "News with Fitted Values"
+                f <- "News: Fitted Values"
         }
         if(factor == "african") {
-                a <- "scores_african"
-                b <- "pred_african"
-                # c <- "up_f6"
-                # d <- "low_f6"
+                a <- "pred_african"
+                # b <- "pred_african"
+                c <- "upr_african"
+                d <- "lwr_african"
                 e <- "African"
-                f <- "African with Fitted Values"
+                f <- "African: Fitted Values"
         }
         if(factor == "popPrint") {
-                a <- "scores_popPrint"
-                b <- "pred_popPrint"
-                # c <- "up_f7"
-                # d <- "low_f7"
+                a <- "pred_popPrint"
+                # b <- "pred_popPrint"
+                c <- "upr_popPrint"
+                d <- "lwr_popPrint"
                 e <- "popPrint"
-                f <- "PopPrint with Fitted Values"
+                f <- "PopPrint: Fitted Values"
         }
         
         #plot
         ggplot(data, aes_string("year", a, group = "category")) +
                 geom_point(color = "blue", size = 1, fill = "white", alpha = 0.5) +
                 geom_line(size = 0.2) +
-                geom_line(aes_string("year", b, group = "category"), colour = "red", size = 0.3, linetype = 2 ) +
-                facet_grid(.~ category) + theme(axis.text.x = element_text(size = 6)) +
-                # geom_errorbar(aes_string(ymax = c, ymin = d), size = 0.3, width = 0.4, alpha = 0.5) +
+                # geom_line(aes_string("year", b, group = "category"), colour = "red", size = 0.3, linetype = 2 ) +
+                facet_grid(.~ category) +
+                theme(axis.text.x = element_text(size = 6)) +
+                geom_errorbar(aes_string(ymax = c, ymin = d), size = 0.3, width = 0.4, alpha = 0.5) +
                 labs(y = e, title = f)
         
 }
+
+
 library(gridExtra)
 ## social
-pf_social_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_social_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                        factor = "social")
-pf_social_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_social_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                          factor = "social")
 jpeg("social_fitted.jpeg", quality = 100)
 grid.arrange(pf_social_up, pf_social_down, nrow = 2)
 dev.off()
 
 ## freeTV
-pf_freeTV_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_freeTV_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                              factor = "freeTV")
-pf_freeTV_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_freeTV_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                                factor = "freeTV")
 jpeg("freeTV_fitted.jpeg", quality = 100)
 grid.arrange(pf_freeTV_up, pf_freeTV_down, nrow = 2)
 dev.off()
 
 ## afrikaans
-pf_afrikaans_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_afrikaans_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                                 factor = "afrikaans")
-pf_afrikaans_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_afrikaans_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                                   factor = "afrikaans")
 jpeg("afrikaans_fitted.jpeg", quality = 100)
 grid.arrange(pf_afrikaans_up, pf_afrikaans_down, nrow = 2)
 dev.off()
 
 ## soccer
-pf_soccer_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_soccer_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                                 factor = "soccer")
-pf_soccer_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_soccer_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                                   factor = "soccer")
 jpeg("soccer_fitted.jpeg", quality = 100)
 grid.arrange(pf_soccer_up, pf_soccer_down, nrow = 2)
 dev.off()
 
 ## african
-pf_african_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_african_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                                 factor = "african")
-pf_african_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_african_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                                   factor = "african")
 jpeg("african_fitted.jpeg", quality = 100)
 grid.arrange(pf_african_up, pf_african_down, nrow = 2)
 dev.off()
 
 ## popPrint
-pf_popPrint_up <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row1),],
+pf_popPrint_up <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row1),],
                                                 factor = "popPrint")
-pf_popPrint_down <- plot_fitted_factors(data = all_preds_scores[which(all_preds_scores$category %in% vector_row2),],
+pf_popPrint_down <- plot_fitted_factors(data = all_preds_ci[which(all_preds_ci$category %in% vector_row2),],
                                                   factor = "popPrint")
 jpeg("popPrint_fitted.jpeg", quality = 100)
 grid.arrange(pf_popPrint_up, pf_popPrint_down, nrow = 2)
 dev.off()
-
-
-
-
-# Try seperate linear regression equations to determine errors
-test <- lm(set_fin$scores_freeTV ~ year + age.actual + sex + edu + hh.inc + race + as.numeric(lsm.full) +
-                   year*age.actual +
-                   year*sex +
-                   year*edu +
-                   year*hh.inc +
-                   year*race +
-                   year*as.numeric(lsm.full),
-           data = set_min_complete)
-coef(test)
-preds <- predict(test, se.fit = TRUE)
-
-# se for conf interval
-se.CI <- preds$se.fit
-# se for pred interval
-se.PI <- sqrt(se.CI^2 + preds$residual.scale^2)
-
-#conf/pred intervals at 90% conf
-alpha <- qt((1-0.9)/2, df = preds$df)
-# [1] -1.681071
-CIup <- preds$fit +  alpha* se.CI# c(alpha, -alpha)
-CIdown <- preds$fit -  alpha* se.CI# c(alpha, -alpha)
-CI <- preds$fit + c(alpha, -alpha)* se.CI 
-# [1] 87.28387 91.97880
-PI <- preds$fit + c(alpha, -alpha) * se.PI
-# [1]  74.46433 104.79833
-
-
-
-
-
-#
-b <- fitted(fit_sem_all)
-c <- BIC(fit_sem_all)
-show(fit_sem_all)
-mi <- modificationIndices(fit_sem_all)
-subset(mi, mi > 10)
-# not too sure this is best.... 'year' kind of gets lost in the other regression coeff...?? Difficult to see change over time
-#  maybe more dummies?.... and also consider bootstrapping options... for defensible std errs...,
-#  will take lots of processing time given large all-set and checking one year seemed to give very similar estimates. Maybe ML OK for large sample...
-
-# Option 2: pseudo panels + longitudinal SEM R package: "ctsem":
-
-# define factor levels
-set_min$age <- factor(set_min$age, labels = c("15-24","25-44", "45-54","55+"), ordered = TRUE)
-set_min$race <- factor(set_min$race,labels = c("black", "coloured", "indian", "white"), ordered = TRUE)
-set_min$edu <- factor(set_min$edu, labels = c("<matric", "matric",">matric" ) ,ordered = TRUE)
-set_min$lsm <- factor(set_min$lsm, labels = c("LSM1-2", "LSM3-4", "LSM5-6", "LSM7-8", "LSM9-10"), ordered = TRUE) #"LSM1-2", 
-set_min$sex <- factor(set_min$sex, labels = c("male", "female"), ordered = TRUE)
-set_min$hh_inc <- factor(set_min$hh_inc, labels = c("<R2500","R2500-R6999","R7000-R11999",">=R12000"), ordered = TRUE) # NB 2012 levels
-
-# function to calculate se
-se <- function(x) sqrt(var(x)/length(x))
-
-# getting dataset into shape
-set_fin <- set_min %>%
-        gather(key = type, value = category, age, sex, edu, hh_inc, race, lsm) %>%
-        dplyr::select(year, category, Business.Day:int_search) %>%
-        as_tibble() %>%
-        group_by(year, category) %>%
-        summarise_all(c("mean"))
-
-# setting year as absolute time, and changing variable to "time"
-set_fin$year <- as.numeric(as.character(set_fin$year)) - 2002
-names(set_fin)[1] <- "time"
-# setting id column as required by the package: named id and numeric
-id <- rep(1:22, 5)
-# extracting "category" column for later reference:
-category <- set_fin$category
-set_fin <- set_fin[,-2]
-
-set_fin_fin <- as.data.frame(set_fin) %>%
-        mutate(id = id) %>%
-        dplyr::select(time, id, everything())
-
-# variable names cant have fullstops, change them to underscores:
-library(stringr)
-media_vehicles <- names(set_min[,20:ncol(set_min)])
-nu_media_vehicles <- str_replace_all(media_vehicles, "\\.", "_")
-
-names(set_fin_fin)[3:ncol(set_fin_fin)] <- nu_media_vehicles
-
-# setting up model for ctsem:
-library(ctsem)
-mod_mat <- matrix(c(0,0,0,0,1,0,0, 
-                    0,0,0,0,1,0,0,
-                    0,0,0,1,0,0,0,
-                    0,0,0,0,1,0,0,
-                    0,0,0,0,1,0,0,
-                    0,0,0,0,0,1,0,
-                    0,0,0,0,0,0,1,
-                    0,0,0,1,0,0,0,
-                    0,0,0,0,1,0,0,
-                    0,0,0,0,0,1,0,
-                    0,0,0,0,0,0,1,
-                    0,0,0,0,1,0,0,
-                    0,0,0,0,1,0,0,
-                    0,0,0,0,1,0,0,
-                    0,0,0,1,0,0,0,
-                    0,0,0,0,1,0,0,
-                    0,1,0,0,0,0,0,
-                    0,0,0,0,0,0,1,
-                    1,0,0,0,0,0,0,
-                    1,0,0,0,0,0,0,
-                    1,0,0,0,0,0,0,
-                    1,0,0,0,0,0,0,
-                    0,1,0,0,0,0,0,
-                    0,0,1,0,0,0,0,
-                    0,1,0,0,0,0,0,
-                    0,0,1,0,0,0,0,
-                    0,1,0,0,0,0,0,
-                    0,1,0,0,0,0,0), nrow = 28, ncol = 7, byrow = TRUE)
-
-mod_ctsem <- ctModel(n.manifest = 28,
-                     n.latent = 7,
-                     LAMBDA = mod_mat,
-                     Tpoints = 5,
-                     manifestNames = nu_media_vehicles)
-
-fit_ctsem <- ctFit(dat = set_fin_fin, mod_ctsem, dataform = "long")
-
-# # worry about distributions (especially binary, so se not accurate:)
-# fit2_boot <- bootstrapLavaan(object = fit2)
 
 
